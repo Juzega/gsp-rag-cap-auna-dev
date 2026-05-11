@@ -1,7 +1,6 @@
 ID: gsp-rag-cap-auna-dev
 _schema-version: '3.1'
 version: 1.0.0
-description: CAP Backend RAG DEV - HANA Cloud directa sin HDI
 
 modules:
 
@@ -18,11 +17,29 @@ modules:
       AICORE_SERVICE_KEY: '{"serviceurls":{"AI_API_URL":"https://api.ai.prod.us-east-1.aws.ml.hana.ondemand.com"},"clientid":"sb-15335cbb-a009-4f5f-a595-815d7669511c!b314624|aicore!b164","clientsecret":"e4ff73e1-0c58-40d4-ae91-358ab0203b1f$-Kxg3npr-Jihj0gg3ox7K0CnD4bclTFIZ1iTe1gJgP8=","url":"https://gsp-servicios-generales-cf-dev-g96y7ihl.authentication.us10.hana.ondemand.com","credential-type":"binding-secret","appname":"15335cbb-a009-4f5f-a595-815d7669511c!b314624|aicore!b164"}'
       AICORE_EMBEDDING_DEPLOYMENT_ID: d91b7d5ef285e8b2
       AICORE_CHAT_DEPLOYMENT_ID: d0b78094414a9ee6
-      HANA_SERVER: 3c8a95a0-f5ca-48e6-8268-845af3103859.hna1.prod-us10.hanacloud.ondemand.com:443
-      HANA_UID: APP_USER
-      HANA_PWD: AunaLoader2026!
-      HANA_SCHEMA: MY_RAG
+    requires:
+      - name: gsp-rag-cap-auna-dev-db
     provides:
       - name: srv-api
         properties:
           srv-url: '${default-url}'
+
+  - name: gsp-rag-cap-auna-dev-db-deployer
+    type: hdb
+    path: gen/db
+    parameters:
+      buildpack: nodejs_buildpack
+    requires:
+      - name: gsp-rag-cap-auna-dev-db
+
+resources:
+
+  - name: gsp-rag-cap-auna-dev-db
+    type: com.sap.xs.hdi-container
+    parameters:
+      service: hana
+      service-plan: hdi-shared
+      config:
+        schema: MY_RAG
+    properties:
+      hdi-service-name: '${service-name}'
