@@ -2,6 +2,7 @@ namespace my.rag;
 
 using { managed } from '@sap/cds/common';
 
+@cds.persistence.name: 'MY_RAG_DOCS'
 entity Docs : managed {
   key ID        : UUID;
   project       : String(100);
@@ -16,6 +17,7 @@ entity Docs : managed {
   embedding     : Vector(1536);
 }
 
+@cds.persistence.name: 'MY_RAG_LOGS'
 entity Logs : managed {
   key ID          : UUID;
   timestamp       : Timestamp;
