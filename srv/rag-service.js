@@ -1,1 +1,63 @@
-const cds = require("@sap/cds");\nconst { v4: uuidv4 } = require("uuid");\nconst crypto = require("crypto");\nconst { saveLog } = require("./helpers/logHelper");\nconst aicoreHelper = require("./helpers/aicoreHelper");\n\nfunction getFileHash(content) {\n  return crypto.createHash("sha256").update(content).digest("hex");\n}\n\nmodule.exports = async function (srv) {\n\n  srv.on("ragSearch", async (req) => {\n    const { consulta } = req.data;\n    const db = await cds.connect.to("db");\n    const start = Date.now();\n    try {\n      const embRes = await aicoreHelper.generateEmbedding(consulta);\n      const queryEmbedding = embRes.data[0].embedding;\n      const plugin = await cds.connect.to("cap-llm-plugin");\n      const results = await plugin.similaritySearch(\n        '\"MY_RAG_DOCS\"', \"EMBEDDING\", \"TEXT\",\n        queryEmbedding, \"COSINE_SIMILARITY\", 3\n      );\n      const cleaned = results.map(r => ({\n        ID: r.ID, TITLE: r.TITLE, CUSTOMER: r.CUSTOMER,\n        PROJECT: r.PROJECT, TEXT: r.TEXT, SCORE: r.SCORE\n      }));\n      const contextDocs = cleaned.map(c => c.TEXT).join("\\n---\\n");\n      const prompt = `Eres un asistente experto de AUNA. Responde usando los documentos.\\nPregunta: "${consulta}"\\n\\nDocumentos:\\n${contextDocs}\\n\\nResponde en espanol.`;\n      const chatRes = await aicoreHelper.chatCompletion([{ role: "user", content: prompt }]);\n      const finalAnswer = chatRes.choices[0].message.content;\n      const duration = Date.now() - start;\n      await saveLog({ type: "query", queryText: consulta, promptFinal: prompt, responseFinal: finalAnswer, details: cleaned, userName: req.user?.id || "anonymous", durationMs: duration });\n      return { oAuditResponse: { idtransaccion: req.id, code: 1, message: "OK" }, oDataResponse: { respuestaFinal: finalAnswer, documentos: cleaned, durationMs: duration } };\n    } catch (err) {\n      console.error("[ragSearch] ERROR:", err.message);\n      return { oAuditResponse: { idtransaccion: req.id, code: -1, message: err.message }, oDataResponse: null };\n    }\n  });\n\n  srv.on("insertDoc", async (req) => {\n    const { title, text, project, customer, docType } = req.data;\n    const db = await cds.connect.to("db");\n    try {\n      const ID = uuidv4();\n      const createdBy = req.user?.id || "caprag_user";\n      const filehash = getFileHash(title + text + project + customer);\n      const response = await aicoreHelper.generateEmbedding(text);\n      const embedding = response.data[0].embedding;\n      await db.run(\n        `INSERT INTO "MY_RAG_DOCS" (ID, TITLE, "TEXT", PROJECT, CUSTOMER, DOCTYPE, FILEHASH, EMBEDDING, createdBy, createdAt, modifiedBy, modifiedAt) VALUES (?, ?, ?, ?, ?, ?, ?, TO_REAL_VECTOR(?), ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)`,\n        [ID, title, text, project, customer, docType || "GENERAL", filehash, JSON.stringify(embedding), createdBy, createdBy]\n      );\n      await saveLog({ type: "insert", queryText: `Insert Doc: ${title}`, responseFinal: "OK", details: { ID, title }, userName: createdBy, durationMs: 0 });\n      return { oAuditResponse: { idtransaccion: req.id, code: 1, message: "Documento insertado" }, oDataResponse: { ID, TITLE: title, PROJECT: project, CUSTOMER: customer } };\n    } catch (err) {\n      console.error("[insertDoc] ERROR:", err.message);\n      return { oAuditResponse: { idtransaccion: req.id, code: -1, message: err.message }, oDataResponse: null };\n    }\n  });\n};\n
+const cds = require("@sap/cds");
+const { v4: uuidv4 } = require("uuid");
+const crypto = require("crypto");
+const { saveLog } = require("./helpers/logHelper");
+const aicoreHelper = require("./helpers/aicoreHelper");
+
+function getFileHash(content) {
+  return crypto.createHash("sha256").update(content).digest("hex");
+}
+
+module.exports = async function (srv) {
+
+  srv.on("ragSearch", async (req) => {
+    const { consulta } = req.data;
+    const db = await cds.connect.to("db");
+    const start = Date.now();
+    try {
+      const embRes = await aicoreHelper.generateEmbedding(consulta);
+      const queryEmbedding = embRes.data[0].embedding;
+      const plugin = await cds.connect.to("cap-llm-plugin");
+      const results = await plugin.similaritySearch(
+        '"MY_RAG_DOCS"', "EMBEDDING", "TEXT",
+        queryEmbedding, "COSINE_SIMILARITY", 3
+      );
+      const cleaned = results.map(r => ({
+        ID: r.ID, TITLE: r.TITLE, CUSTOMER: r.CUSTOMER,
+        PROJECT: r.PROJECT, TEXT: r.TEXT, SCORE: r.SCORE
+      }));
+      const contextDocs = cleaned.map(c => c.TEXT).join("\n---\n");
+      const prompt = `Eres un asistente experto de AUNA. Responde usando los documentos.\nPregunta: "${consulta}"\n\nDocumentos:\n${contextDocs}\n\nResponde en espanol.`;
+      const chatRes = await aicoreHelper.chatCompletion([{ role: "user", content: prompt }]);
+      const finalAnswer = chatRes.choices[0].message.content;
+      const duration = Date.now() - start;
+      await saveLog({ type: "query", queryText: consulta, promptFinal: prompt, responseFinal: finalAnswer, details: cleaned, userName: req.user?.id || "anonymous", durationMs: duration });
+      return { oAuditResponse: { idtransaccion: req.id, code: 1, message: "OK" }, oDataResponse: { respuestaFinal: finalAnswer, documentos: cleaned, durationMs: duration } };
+    } catch (err) {
+      console.error("[ragSearch] ERROR:", err.message);
+      return { oAuditResponse: { idtransaccion: req.id, code: -1, message: err.message }, oDataResponse: null };
+    }
+  });
+
+  srv.on("insertDoc", async (req) => {
+    const { title, text, project, customer, docType, fileHash: fhash } = req.data;
+    const db = await cds.connect.to("db");
+    try {
+      const ID = uuidv4();
+      const createdBy = req.user?.id || "caprag_user";
+      // Usar el hash del archivo completo enviado por el Loader
+      const filehash = fhash || getFileHash(title + text + project + customer);
+      const response = await aicoreHelper.generateEmbedding(text);
+      const embedding = response.data[0].embedding;
+      await db.run(
+        `INSERT INTO "MY_RAG_DOCS" (ID, TITLE, TEXT, PROJECT, CUSTOMER, DOCTYPE, FILEHASH, EMBEDDING, createdBy, createdAt, modifiedBy, modifiedAt) VALUES (?, ?, ?, ?, ?, ?, ?, TO_REAL_VECTOR(?), ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)`,
+        [ID, title, text, project, customer, docType || "GENERAL", filehash, JSON.stringify(embedding), createdBy, createdBy]
+      );
+      await saveLog({ type: "insert", queryText: `Insert Doc: ${title}`, responseFinal: "OK", details: { ID, title }, userName: createdBy, durationMs: 0 });
+      return { oAuditResponse: { idtransaccion: req.id, code: 1, message: "Documento insertado" }, oDataResponse: { ID, title, project, customer, fileHash: filehash } };
+    } catch (err) {
+      console.error("[insertDoc] ERROR:", err.message);
+      return { oAuditResponse: { idtransaccion: req.id, code: -1, message: err.message }, oDataResponse: null };
+    }
+  });
+};
