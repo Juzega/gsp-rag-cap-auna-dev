@@ -18,6 +18,7 @@ service RagService @(impl: 'srv/rag-service.js') {
     project  : String,
     customer : String,
     docType  : String,
-    fileHash : String
+    fileHash : String,
+    chunkId  : String
   ) returns ResponseService;
 }
