@@ -33,7 +33,6 @@ entity Logs : managed {
   promptFinal     : LargeString;
   responseFinal   : LargeString;
   details         : LargeString;
-  userName        : String(100);
   durationMs      : Integer;
   username        : String(100);
   email           : String(100);
