@@ -44,22 +44,51 @@ module.exports = async function (srv) {
     }
   });
 
+  // ── insertDocument ────────────────────────────────────────────────────────
+  srv.on("insertDocument", async (req) => {
+    const { fileHash, mimeType, content } = req.data;
+    const db = await cds.connect.to("db");
+    try {
+      const createdBy = req.user?.id || "caprag_user";
+      // Verificar si ya existe
+      const existing = await db.run(
+        `SELECT ID FROM "MY_RAG_DOCUMENTS" WHERE FILEHASH = ?`, [fileHash]
+      );
+      if (existing && existing.length > 0) {
+        return {
+          oAuditResponse: { idtransaccion: req.id, code: 1, message: "Documento ya existe" },
+          oDataResponse: { ID: existing[0].ID, fileHash }
+        };
+      }
+      const ID = uuidv4();
+      await db.run(
+        `INSERT INTO "MY_RAG_DOCUMENTS" (ID, FILEHASH, MIMETYPE, CONTENT, CREATEDAT, CREATEDBY, MODIFIEDAT, MODIFIEDBY) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, ?)`,
+        [ID, fileHash, mimeType, content, createdBy, createdBy]
+      );
+      return {
+        oAuditResponse: { idtransaccion: req.id, code: 1, message: "Documento guardado" },
+        oDataResponse: { ID, fileHash, mimeType }
+      };
+    } catch (err) {
+      console.error("[insertDocument] ERROR:", err.message);
+      return { oAuditResponse: { idtransaccion: req.id, code: -1, message: err.message }, oDataResponse: null };
+    }
+  });
+
   // ── getDocument ───────────────────────────────────────────────────────────
   srv.on("getDocument", async (req) => {
     const { fileHash } = req.data;
     const db = await cds.connect.to("db");
     try {
       const rows = await db.run(
-        `SELECT ID, FILEHASH, MIMETYPE, CONTENT FROM "MY_RAG_DOCUMENTS" WHERE FILEHASH = ?`,
-        [fileHash]
+        `SELECT ID, FILEHASH, MIMETYPE, CONTENT FROM "MY_RAG_DOCUMENTS" WHERE FILEHASH = ?`, [fileHash]
       );
       if (!rows || rows.length === 0) {
-        return { oAuditResponse: { idtransaccion: req.id, code: 0, message: "Documento no encontrado" }, oDataResponse: null };
+        return { oAuditResponse: { idtransaccion: req.id, code: 0, message: "No encontrado" }, oDataResponse: null };
       }
-      const doc = rows[0];
       return {
         oAuditResponse: { idtransaccion: req.id, code: 1, message: "OK" },
-        oDataResponse: { ID: doc.ID, fileHash: doc.FILEHASH, mimeType: doc.MIMETYPE, contentB64: doc.CONTENT }
+        oDataResponse: { ID: rows[0].ID, fileHash: rows[0].FILEHASH, mimeType: rows[0].MIMETYPE, contentB64: rows[0].CONTENT }
       };
     } catch (err) {
       console.error("[getDocument] ERROR:", err.message);
@@ -69,7 +98,7 @@ module.exports = async function (srv) {
 
   // ── insertDoc ─────────────────────────────────────────────────────────────
   srv.on("insertDoc", async (req) => {
-    const { title, text, project, customer, docType, fileHash: fhash, chunkId, source, mimeType, contentB64 } = req.data;
+    const { title, text, project, customer, docType, fileHash: fhash, chunkId, source } = req.data;
     const db = await cds.connect.to("db");
     try {
       const ID = uuidv4();
@@ -77,27 +106,12 @@ module.exports = async function (srv) {
       const filehash = fhash || getFileHash(title + text + project + customer);
       const chunkid = chunkId || `chunk_1`;
       const src = source || title;
-
-      // Si viene contentB64 y no existe el documento aun, guardarlo
-      if (contentB64 && mimeType) {
-        const existing = await db.run(
-          `SELECT ID FROM "MY_RAG_DOCUMENTS" WHERE FILEHASH = ?`, [filehash]
-        );
-        if (!existing || existing.length === 0) {
-          await db.run(
-            `INSERT INTO "MY_RAG_DOCUMENTS" (ID, FILEHASH, MIMETYPE, CONTENT, CREATEDAT, CREATEDBY, MODIFIEDAT, MODIFIEDBY) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, ?)`,
-            [uuidv4(), filehash, mimeType, contentB64, createdBy, createdBy]
-          );
-        }
-      }
-
       const response = await aicoreHelper.generateEmbedding(text);
       const embedding = response.data[0].embedding;
       await db.run(
         `INSERT INTO "MY_RAG_DOCS" (ID, TITLE, TEXT, PROJECT, CUSTOMER, DOCTYPE, FILEHASH, CHUNKID, SOURCE, EMBEDDING, createdBy, createdAt, modifiedBy, modifiedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TO_REAL_VECTOR(?), ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)`,
         [ID, title, text, project, customer, docType || "GENERAL", filehash, chunkid, src, JSON.stringify(embedding), createdBy, createdBy]
       );
-
       await saveLog({ type: "insert", queryText: `Insert Doc: ${title}`, responseFinal: "OK", details: { ID, title, chunkId: chunkid, source: src }, userName: createdBy, durationMs: 0 });
       return {
         oAuditResponse: { idtransaccion: req.id, code: 1, message: "Documento insertado" },

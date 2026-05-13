@@ -21,19 +21,25 @@ service RagService @(impl: 'srv/rag-service.js') {
 
   action ragSearch(consulta: String) returns ResponseService;
 
-  action insertDoc(
-    title       : String,
-    text        : String,
-    project     : String,
-    customer    : String,
-    docType     : String,
-    fileHash    : String,
-    chunkId     : String,
-    source      : String,
-    mimeType    : String,
-    contentB64  : String
+  // Guardar archivo completo en base64
+  action insertDocument(
+    fileHash   : String,
+    mimeType   : String,
+    content    : LargeString
   ) returns ResponseService;
 
-  // Descargar archivo original por fileHash
+  // Insertar chunk con embedding
+  action insertDoc(
+    title    : String,
+    text     : String,
+    project  : String,
+    customer : String,
+    docType  : String,
+    fileHash : String,
+    chunkId  : String,
+    source   : String
+  ) returns ResponseService;
+
+  // Descargar archivo por fileHash
   function getDocument(fileHash: String) returns ResponseService;
 }
