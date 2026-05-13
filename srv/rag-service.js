@@ -4,6 +4,8 @@ const crypto = require("crypto");
 const { saveLog } = require("./helpers/logHelper");
 const aicoreHelper = require("./helpers/aicoreHelper");
 
+const SCORE_THRESHOLD = 0.5; // Score minimo para considerar un documento relevante
+
 function getFileHash(content) {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
@@ -22,27 +24,55 @@ module.exports = async function (srv) {
         '"MY_RAG_DOCS"', "EMBEDDING", "TEXT",
         queryEmbedding, "COSINE_SIMILARITY", 3
       );
+
       const cleaned = results.map(r => ({
         ID: r.ID, TITLE: r.TITLE, CUSTOMER: r.CUSTOMER,
         PROJECT: r.PROJECT, TEXT: r.TEXT, SCORE: r.SCORE,
         SOURCE: r.SOURCE, FILEHASH: r.FILEHASH
       }));
-      const contextDocs = cleaned.map(c => c.TEXT).join("\n---\n");
-      const prompt = `Eres un asistente experto de AUNA. Responde usando los documentos.\nPregunta: "${consulta}"\n\nDocumentos:\n${contextDocs}\n\nResponde en espanol.`;
+
+      // Verificar si hay documentos con score suficiente
+      const relevantes = cleaned.filter(r => r.SCORE >= SCORE_THRESHOLD);
+      const duration = Date.now() - start;
+
+      if (!relevantes || relevantes.length === 0) {
+        // Guardar como pregunta sin respuesta
+        await saveLog({
+          type: "unanswered",
+          queryText: consulta,
+          promptFinal: "",
+          responseFinal: "Sin documentos relevantes encontrados",
+          details: { scores: cleaned.map(r => ({ title: r.TITLE, score: r.SCORE })) },
+          username: username || "anonymous",
+          durationMs: duration,
+          email: email || ""
+        });
+        return {
+          oAuditResponse: { idtransaccion: req.id, code: 0, message: "Sin resultados relevantes" },
+          oDataResponse: {
+            respuestaFinal: "No encontré información suficiente en los documentos cargados para responder tu pregunta. Por favor, consulta con el equipo para que puedan cargar documentos relacionados.",
+            documentos: [],
+            durationMs: duration
+          }
+        };
+      }
+
+      const contextDocs = relevantes.map(c => c.TEXT).join("\n---\n");
+      const prompt = `Eres un asistente experto de AUNA. Responde usando los documentos.\nPregunta: "${consulta}"\n\nDocumentos:\n${contextDocs}\n\nResponde en espanol. Si la informacion no esta en los documentos, indicalo claramente sin inventar.`;
       const chatRes = await aicoreHelper.chatCompletion([{ role: "user", content: prompt }]);
       const finalAnswer = chatRes.choices[0].message.content;
-      const duration = Date.now() - start;
+
       await saveLog({
         type: "query",
         queryText: consulta,
         promptFinal: prompt,
         responseFinal: finalAnswer,
         details: cleaned,
-        userName: username || req.user?.id || "anonymous",
+        username: username || "anonymous",
         durationMs: duration,
-        username: username || "",
         email: email || ""
       });
+
       return {
         oAuditResponse: { idtransaccion: req.id, code: 1, message: "OK" },
         oDataResponse: { respuestaFinal: finalAnswer, documentos: cleaned, durationMs: duration }
@@ -109,9 +139,8 @@ module.exports = async function (srv) {
         queryText: `Insert Doc: ${title}`,
         responseFinal: "OK",
         details: { ID, title, chunkId: chunkid, source: src },
-        userName: username || createdBy,
+        username: username || createdBy,
         durationMs: 0,
-        username: username || "",
         email: email || ""
       });
       return { oAuditResponse: { idtransaccion: req.id, code: 1, message: "Documento insertado" }, oDataResponse: { ID, title, project, customer, fileHash: filehash, chunkId: chunkid, source: src } };
