@@ -10,6 +10,7 @@ function getFileHash(content) {
 
 module.exports = async function (srv) {
 
+  // ── ragSearch ─────────────────────────────────────────────────────────────
   srv.on("ragSearch", async (req) => {
     const { consulta } = req.data;
     const db = await cds.connect.to("db");
@@ -25,7 +26,7 @@ module.exports = async function (srv) {
       const cleaned = results.map(r => ({
         ID: r.ID, TITLE: r.TITLE, CUSTOMER: r.CUSTOMER,
         PROJECT: r.PROJECT, TEXT: r.TEXT, SCORE: r.SCORE,
-        SOURCE: r.SOURCE
+        SOURCE: r.SOURCE, FILEHASH: r.FILEHASH
       }));
       const contextDocs = cleaned.map(c => c.TEXT).join("\n---\n");
       const prompt = `Eres un asistente experto de AUNA. Responde usando los documentos.\nPregunta: "${consulta}"\n\nDocumentos:\n${contextDocs}\n\nResponde en espanol.`;
@@ -33,15 +34,42 @@ module.exports = async function (srv) {
       const finalAnswer = chatRes.choices[0].message.content;
       const duration = Date.now() - start;
       await saveLog({ type: "query", queryText: consulta, promptFinal: prompt, responseFinal: finalAnswer, details: cleaned, userName: req.user?.id || "anonymous", durationMs: duration });
-      return { oAuditResponse: { idtransaccion: req.id, code: 1, message: "OK" }, oDataResponse: { respuestaFinal: finalAnswer, documentos: cleaned, durationMs: duration } };
+      return {
+        oAuditResponse: { idtransaccion: req.id, code: 1, message: "OK" },
+        oDataResponse: { respuestaFinal: finalAnswer, documentos: cleaned, durationMs: duration }
+      };
     } catch (err) {
       console.error("[ragSearch] ERROR:", err.message);
       return { oAuditResponse: { idtransaccion: req.id, code: -1, message: err.message }, oDataResponse: null };
     }
   });
 
+  // ── getDocument ───────────────────────────────────────────────────────────
+  srv.on("getDocument", async (req) => {
+    const { fileHash } = req.data;
+    const db = await cds.connect.to("db");
+    try {
+      const rows = await db.run(
+        `SELECT ID, FILEHASH, MIMETYPE, CONTENT FROM "MY_RAG_DOCUMENTS" WHERE FILEHASH = ?`,
+        [fileHash]
+      );
+      if (!rows || rows.length === 0) {
+        return { oAuditResponse: { idtransaccion: req.id, code: 0, message: "Documento no encontrado" }, oDataResponse: null };
+      }
+      const doc = rows[0];
+      return {
+        oAuditResponse: { idtransaccion: req.id, code: 1, message: "OK" },
+        oDataResponse: { ID: doc.ID, fileHash: doc.FILEHASH, mimeType: doc.MIMETYPE, contentB64: doc.CONTENT }
+      };
+    } catch (err) {
+      console.error("[getDocument] ERROR:", err.message);
+      return { oAuditResponse: { idtransaccion: req.id, code: -1, message: err.message }, oDataResponse: null };
+    }
+  });
+
+  // ── insertDoc ─────────────────────────────────────────────────────────────
   srv.on("insertDoc", async (req) => {
-    const { title, text, project, customer, docType, fileHash: fhash, chunkId, source } = req.data;
+    const { title, text, project, customer, docType, fileHash: fhash, chunkId, source, mimeType, contentB64 } = req.data;
     const db = await cds.connect.to("db");
     try {
       const ID = uuidv4();
@@ -49,14 +77,32 @@ module.exports = async function (srv) {
       const filehash = fhash || getFileHash(title + text + project + customer);
       const chunkid = chunkId || `chunk_1`;
       const src = source || title;
+
+      // Si viene contentB64 y no existe el documento aun, guardarlo
+      if (contentB64 && mimeType) {
+        const existing = await db.run(
+          `SELECT ID FROM "MY_RAG_DOCUMENTS" WHERE FILEHASH = ?`, [filehash]
+        );
+        if (!existing || existing.length === 0) {
+          await db.run(
+            `INSERT INTO "MY_RAG_DOCUMENTS" (ID, FILEHASH, MIMETYPE, CONTENT, CREATEDAT, CREATEDBY, MODIFIEDAT, MODIFIEDBY) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, ?)`,
+            [uuidv4(), filehash, mimeType, contentB64, createdBy, createdBy]
+          );
+        }
+      }
+
       const response = await aicoreHelper.generateEmbedding(text);
       const embedding = response.data[0].embedding;
       await db.run(
         `INSERT INTO "MY_RAG_DOCS" (ID, TITLE, TEXT, PROJECT, CUSTOMER, DOCTYPE, FILEHASH, CHUNKID, SOURCE, EMBEDDING, createdBy, createdAt, modifiedBy, modifiedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TO_REAL_VECTOR(?), ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)`,
         [ID, title, text, project, customer, docType || "GENERAL", filehash, chunkid, src, JSON.stringify(embedding), createdBy, createdBy]
       );
+
       await saveLog({ type: "insert", queryText: `Insert Doc: ${title}`, responseFinal: "OK", details: { ID, title, chunkId: chunkid, source: src }, userName: createdBy, durationMs: 0 });
-      return { oAuditResponse: { idtransaccion: req.id, code: 1, message: "Documento insertado" }, oDataResponse: { ID, title, project, customer, fileHash: filehash, chunkId: chunkid, source: src } };
+      return {
+        oAuditResponse: { idtransaccion: req.id, code: 1, message: "Documento insertado" },
+        oDataResponse: { ID, title, project, customer, fileHash: filehash, chunkId: chunkid, source: src }
+      };
     } catch (err) {
       console.error("[insertDoc] ERROR:", err.message);
       return { oAuditResponse: { idtransaccion: req.id, code: -1, message: err.message }, oDataResponse: null };
