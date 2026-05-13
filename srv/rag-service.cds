@@ -19,16 +19,18 @@ service RagService @(impl: 'srv/rag-service.js') {
     oDataResponse  : dynamic;
   };
 
-  action ragSearch(consulta: String) returns ResponseService;
+  action ragSearch(
+    consulta  : String,
+    loginName : String,
+    correo    : String
+  ) returns ResponseService;
 
-  // Guardar archivo completo en base64
   action insertDocument(
     fileHash   : String,
     mimeType   : String,
     content    : LargeString
   ) returns ResponseService;
 
-  // Insertar chunk con embedding
   action insertDoc(
     title    : String,
     text     : String,
@@ -40,6 +42,5 @@ service RagService @(impl: 'srv/rag-service.js') {
     source   : String
   ) returns ResponseService;
 
-  // Descargar archivo por fileHash
   function getDocument(fileHash: String) returns ResponseService;
 }
