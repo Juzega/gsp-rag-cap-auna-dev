@@ -90,7 +90,7 @@ module.exports = async function (srv) {
   });
 
   srv.on("insertDoc", async (req) => {
-    const { title, text, project, customer, docType, fileHash: fhash, chunkId, source } = req.data;
+    const { title, text, project, customer, docType, fileHash: fhash, chunkId, source, loginName, correo } = req.data;
     const db = await cds.connect.to("db");
     try {
       const ID = uuidv4();
@@ -104,7 +104,16 @@ module.exports = async function (srv) {
         `INSERT INTO "MY_RAG_DOCS" (ID, TITLE, TEXT, PROJECT, CUSTOMER, DOCTYPE, FILEHASH, CHUNKID, SOURCE, EMBEDDING, createdBy, createdAt, modifiedBy, modifiedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TO_REAL_VECTOR(?), ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)`,
         [ID, title, text, project, customer, docType || "GENERAL", filehash, chunkid, src, JSON.stringify(embedding), createdBy, createdBy]
       );
-      await saveLog({ type: "insert", queryText: `Insert Doc: ${title}`, responseFinal: "OK", details: { ID, title, chunkId: chunkid, source: src }, userName: createdBy, durationMs: 0 });
+      await saveLog({
+        type: "insert",
+        queryText: `Insert Doc: ${title}`,
+        responseFinal: "OK",
+        details: { ID, title, chunkId: chunkid, source: src },
+        userName: loginName || createdBy,
+        durationMs: 0,
+        loginName: loginName || "",
+        correo: correo || ""
+      });
       return { oAuditResponse: { idtransaccion: req.id, code: 1, message: "Documento insertado" }, oDataResponse: { ID, title, project, customer, fileHash: filehash, chunkId: chunkid, source: src } };
     } catch (err) {
       console.error("[insertDoc] ERROR:", err.message);

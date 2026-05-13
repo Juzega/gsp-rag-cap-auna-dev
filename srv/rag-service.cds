@@ -32,14 +32,16 @@ service RagService @(impl: 'srv/rag-service.js') {
   ) returns ResponseService;
 
   action insertDoc(
-    title    : String,
-    text     : String,
-    project  : String,
-    customer : String,
-    docType  : String,
-    fileHash : String,
-    chunkId  : String,
-    source   : String
+    title     : String,
+    text      : String,
+    project   : String,
+    customer  : String,
+    docType   : String,
+    fileHash  : String,
+    chunkId   : String,
+    source    : String,
+    loginName : String,
+    correo    : String
   ) returns ResponseService;
 
   function getDocument(fileHash: String) returns ResponseService;
