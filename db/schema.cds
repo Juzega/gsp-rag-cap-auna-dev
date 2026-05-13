@@ -35,6 +35,6 @@ entity Logs : managed {
   details         : LargeString;
   userName        : String(100);
   durationMs      : Integer;
-  loginName       : String(100);
-  correo          : String(100);
+  username        : String(100);
+  email           : String(100);
 }

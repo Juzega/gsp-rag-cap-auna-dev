@@ -20,9 +20,9 @@ service RagService @(impl: 'srv/rag-service.js') {
   };
 
   action ragSearch(
-    consulta  : String,
-    loginName : String,
-    correo    : String
+    consulta : String,
+    username : String,
+    email    : String
   ) returns ResponseService;
 
   action insertDocument(
@@ -32,16 +32,16 @@ service RagService @(impl: 'srv/rag-service.js') {
   ) returns ResponseService;
 
   action insertDoc(
-    title     : String,
-    text      : String,
-    project   : String,
-    customer  : String,
-    docType   : String,
-    fileHash  : String,
-    chunkId   : String,
-    source    : String,
-    loginName : String,
-    correo    : String
+    title    : String,
+    text     : String,
+    project  : String,
+    customer : String,
+    docType  : String,
+    fileHash : String,
+    chunkId  : String,
+    source   : String,
+    username : String,
+    email    : String
   ) returns ResponseService;
 
   function getDocument(fileHash: String) returns ResponseService;

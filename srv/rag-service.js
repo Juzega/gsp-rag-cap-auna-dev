@@ -11,7 +11,7 @@ function getFileHash(content) {
 module.exports = async function (srv) {
 
   srv.on("ragSearch", async (req) => {
-    const { consulta, loginName, correo } = req.data;
+    const { consulta, username, email } = req.data;
     const db = await cds.connect.to("db");
     const start = Date.now();
     try {
@@ -38,10 +38,10 @@ module.exports = async function (srv) {
         promptFinal: prompt,
         responseFinal: finalAnswer,
         details: cleaned,
-        userName: loginName || req.user?.id || "anonymous",
+        userName: username || req.user?.id || "anonymous",
         durationMs: duration,
-        loginName: loginName || "",
-        correo: correo || ""
+        username: username || "",
+        email: email || ""
       });
       return {
         oAuditResponse: { idtransaccion: req.id, code: 1, message: "OK" },
@@ -90,7 +90,7 @@ module.exports = async function (srv) {
   });
 
   srv.on("insertDoc", async (req) => {
-    const { title, text, project, customer, docType, fileHash: fhash, chunkId, source, loginName, correo } = req.data;
+    const { title, text, project, customer, docType, fileHash: fhash, chunkId, source, username, email } = req.data;
     const db = await cds.connect.to("db");
     try {
       const ID = uuidv4();
@@ -109,10 +109,10 @@ module.exports = async function (srv) {
         queryText: `Insert Doc: ${title}`,
         responseFinal: "OK",
         details: { ID, title, chunkId: chunkid, source: src },
-        userName: loginName || createdBy,
+        userName: username || createdBy,
         durationMs: 0,
-        loginName: loginName || "",
-        correo: correo || ""
+        username: username || "",
+        email: email || ""
       });
       return { oAuditResponse: { idtransaccion: req.id, code: 1, message: "Documento insertado" }, oDataResponse: { ID, title, project, customer, fileHash: filehash, chunkId: chunkid, source: src } };
     } catch (err) {
